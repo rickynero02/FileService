@@ -36,7 +36,7 @@ public class ResponseProvider implements AsyncResponseTransformer<GetObjectRespo
         response.cf.completeExceptionally(throwable);
     }
 
-    protected static class FluxResponse {
+     static class FluxResponse {
         final CompletableFuture<FluxResponse> cf = new CompletableFuture<>();
         GetObjectResponse sdkResponse;
         Flux<ByteBuffer> flux;
