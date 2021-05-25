@@ -8,6 +8,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -15,10 +16,7 @@ import software.amazon.awssdk.core.SdkResponse;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectResponse;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.PutObjectResponse;
+import software.amazon.awssdk.services.s3.model.*;
 
 import java.nio.ByteBuffer;
 import java.util.HashMap;
@@ -26,6 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("api/v1/files")
@@ -79,6 +78,41 @@ public class FileController {
                 });
     }
 
+    @PostMapping(path = "/uploadMany")
+    public Mono<ResponseEntity<UploadResult>> uploadMultiPart(@RequestHeader HttpHeaders headers,
+        @RequestPart("file") Flux<FilePart> file) {
+
+        return file.flatMap(part -> saveFile(headers, properties.getBucket(), part))
+                .collect(Collectors.toList())
+                .map(keys -> ResponseEntity.status(HttpStatus.CREATED)
+                    .body(new UploadResult(HttpStatus.CREATED, keys)));
+    }
+
+    private Mono<String> saveFile(HttpHeaders headers, String bucketName, FilePart part) {
+        String fileKey = UUID.randomUUID().toString();
+
+        Map<String, String> metadata = new HashMap<>();
+        String fileName = part.filename();
+        if(fileName == null) {
+            fileName = fileKey;
+        }
+
+        metadata.put("filename", fileName);
+        MediaType mediaType = headers.getContentType();
+        if(mediaType == null) {
+            mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        }
+
+        CompletableFuture<CreateMultipartUploadResponse> future = asyncClient
+                .createMultipartUpload(CreateMultipartUploadRequest.builder()
+                .bucket(bucketName)
+                .key(fileKey)
+                .metadata(metadata)
+                .build());
+
+
+    }
+
     @GetMapping(path="/download/{filekey}")
     public Mono<ResponseEntity<Flux<ByteBuffer>>> downloadFile(@PathVariable("filekey") String fileKey) {
         GetObjectRequest request = GetObjectRequest.builder()
@@ -120,5 +154,19 @@ public class FileController {
             return;
         }
         throw new DownloadFailedException(response);
+    }
+
+    public static class UploadResult {
+        private final String bucket;
+        private final String fileKey;
+
+        private String uploadId;
+        private int partCounter;
+        private Map<Integer, CompletedPart> completeParts = new HashMap<>();
+
+        public UploadResult(String bucket, String fileKey) {
+            this.bucket = bucket;
+            this.fileKey = fileKey;
+        }
     }
 }
