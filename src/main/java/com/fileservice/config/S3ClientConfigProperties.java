@@ -14,5 +14,5 @@ public class S3ClientConfigProperties {
     private String accessKeyId = "AKIAWGBTQG4CKMPXS467";
     private String secretAccessKey = "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";
     private String bucket = "filesharing-project-123";
-    private int multiPartMinSize = 0;
+    private int multiPartMinSize = 5 * 1024 * 1024;
 }

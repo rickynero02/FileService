@@ -3,6 +3,7 @@ package com.fileservice.files;
 import com.fileservice.config.S3ClientConfigProperties;
 import com.fileservice.exceptions.DownloadFailedException;
 import com.fileservice.exceptions.UploadFailedException;
+import com.fileservice.utility.UserRoles;
 import lombok.AllArgsConstructor;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
@@ -34,6 +35,8 @@ public class FileService {
     private final FileRepository repository;
     private final S3AsyncClient asyncClient;
     private final S3ClientConfigProperties properties;
+
+    private static final int MAX_FILE = 2;
 
     public Flux<File> fetchAllFiles(String owner) {
         return repository.findAllByOwner(owner);
@@ -70,20 +73,27 @@ public class FileService {
                 });
     }
 
-    public Mono<List> uploadFile(HttpHeaders headers, Flux<FilePart> fileParts,
-                                 String owner, String filename) {
-        File file = new File(UUID.randomUUID().toString(), owner,
-                null, null, LocalDateTime.now(), true);
+    public Mono<List> uploadFile(HttpHeaders headers,
+                 Flux<FilePart> fileParts, UploadRequest request) {
 
-        return repository.findByNameAndOwner(filename, owner)
-                .flatMap(f -> Mono.error(new IllegalStateException("File already exist")))
-                .switchIfEmpty(Mono.defer(() -> fileParts.flatMap(part -> {
-                    file.setName(part.filename());
-                    var newFile = repository.save(file);
-                    var monoPart = Mono.just(part);
-                    return Mono.when(newFile, monoPart).then(monoPart);
-                }).flatMap(part -> saveFile(headers, part, file))
-                  .collect(Collectors.toList()))).cast(List.class);
+        File file = new File(UUID.randomUUID().toString(), request.getUsername(),
+                request.getFilename(), null, LocalDateTime.now(), true);
+
+        return repository.findAllByOwner(request.getUsername()).collect(Collectors.toList())
+                .map(List::size)
+                .filter(c -> c >= MAX_FILE && request.getRole().equals(UserRoles.STANDARD))
+                .flatMap(f -> Mono.error(new IllegalStateException("Max file number reached")))
+                .switchIfEmpty(Mono.defer(() ->
+                        repository.findByNameAndOwner(request.getFilename(), request.getUsername())
+                        .flatMap(f -> Mono.error(new IllegalStateException("File already exist")))
+                        .switchIfEmpty(Mono.defer(() -> fileParts.flatMap(part ->
+                                saveFile(headers, part, file)).collect(Collectors.toList())
+                        .flatMap(list -> {
+                            var monoList = Mono.just(list);
+                            var newFile = repository.save(file);
+                            return Mono.when(monoList, newFile).then(monoList);
+                        }))))).cast(List.class);
+
     }
 
    private Mono<String> saveFile(HttpHeaders headers, FilePart part, File file) {
