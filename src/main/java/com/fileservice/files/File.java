@@ -1,9 +1,6 @@
 package com.fileservice.files;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import org.springframework.data.annotation.Id;
 
 import java.time.LocalDateTime;
@@ -13,24 +10,15 @@ import java.time.LocalDateTime;
 @Setter
 @NoArgsConstructor
 @SuppressWarnings("unused")
+@ToString
 public class File {
     @Id
     private String id;
     private String owner;
     private String name;
     private String password = null;
+    private long length = 0;
     private LocalDateTime uploadDate;
     private boolean isPrivate = true;
-
-    public File(String owner,
-                String name,
-                String password,
-                LocalDateTime uploadDate,
-                boolean isPrivate) {
-        this.owner = owner;
-        this.name = name;
-        this.password = password;
-        this.uploadDate = uploadDate;
-        this.isPrivate = isPrivate;
-    }
+    private String description;
 }

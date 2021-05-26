@@ -21,10 +21,7 @@ import software.amazon.awssdk.services.s3.model.*;
 
 import java.nio.ByteBuffer;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -36,7 +33,7 @@ public class FileService {
     private final S3AsyncClient asyncClient;
     private final S3ClientConfigProperties properties;
 
-    private static final int MAX_FILE = 2;
+    private static final int MAX_FILE = 10;
 
     public Flux<File> fetchAllFiles(String owner) {
         return repository.findAllByOwner(owner);
@@ -53,31 +50,41 @@ public class FileService {
                 .switchIfEmpty(Mono.error(new IllegalStateException("Incorrect password")));
     }
 
-    public Mono<ResponseEntity<Flux<ByteBuffer>>> downloadFile(String fileKey) {
+    public Mono<ResponseEntity<Flux<ByteBuffer>>> downloadFile(File f) {
 
         GetObjectRequest request = GetObjectRequest.builder()
                 .bucket(properties.getBucket())
-                .key(fileKey)
+                .key(f.getId())
                 .build();
 
-        return Mono.fromFuture(asyncClient.getObject(request, new ResponseProvider()))
-                .map(response -> {
+        return repository.findById(f.getId())
+                .switchIfEmpty(Mono.error(new IllegalStateException("File not found")))
+                .filter(file -> {
+                    if(file.isPrivate() && !file.getOwner().equals(f.getOwner()))
+                        return false;
+                    if(!file.isPrivate() && Objects.nonNull(file.getPassword()))
+                        return file.getPassword().equals(f.getPassword());
+                    return true;
+                }).switchIfEmpty(Mono.error(new IllegalStateException("This file is protected")))
+                .flatMap(file -> Mono.fromFuture(asyncClient
+                        .getObject(request, new ResponseProvider())).map(response -> {
                     checkDownloadResult(response.sdkResponse);
-                    String fileName = getMetadataItem(response.sdkResponse, fileKey);
+                    String fileName = getMetadataItem(response.sdkResponse, file.getId());
 
                     return ResponseEntity.ok()
                             .header(HttpHeaders.CONTENT_TYPE, response.sdkResponse.contentType())
                             .header(HttpHeaders.CONTENT_LENGTH, Long.toString(response.sdkResponse.contentLength()))
                             .header(HttpHeaders.CONTENT_DISPOSITION, String.format("attachment; filename=\"%s\"", fileName))
                             .body(response.flux);
-                });
+                }));
     }
 
     public Mono<List> uploadFile(HttpHeaders headers,
                  Flux<FilePart> fileParts, UploadRequest request) {
 
         File file = new File(UUID.randomUUID().toString(), request.getUsername(),
-                request.getFilename(), null, LocalDateTime.now(), true);
+                request.getFilename(), null,  headers.getContentLength(),
+                LocalDateTime.now(), true, request.getDescription());
 
         return repository.findAllByOwner(request.getUsername()).collect(Collectors.toList())
                 .map(List::size)
