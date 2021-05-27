@@ -55,4 +55,11 @@ public class FileController {
     public Mono<ResponseEntity<Flux<ByteBuffer>>> downloadFile(@RequestBody File f) {
         return service.downloadFile(f);
     }
+
+    @DeleteMapping(path = "/delete")
+    public Mono<Message> deleteFile(@RequestBody File f) {
+        return service.deleteFile(f)
+                .map(file -> new Message().withElement("result", file))
+                .onErrorResume(err -> Mono.just(new Message().withElement("error", err.getMessage())));
+    }
 }

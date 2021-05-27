@@ -1,6 +1,7 @@
 package com.fileservice.files;
 
 import com.fileservice.config.S3ClientConfigProperties;
+import com.fileservice.exceptions.DeleteFailedException;
 import com.fileservice.exceptions.DownloadFailedException;
 import com.fileservice.exceptions.UploadFailedException;
 import com.fileservice.utility.UserRoles;
@@ -15,7 +16,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import software.amazon.awssdk.core.SdkResponse;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
-import software.amazon.awssdk.http.SdkHttpResponse;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.*;
 
@@ -59,22 +59,21 @@ public class FileService {
 
         return repository.findById(f.getId())
                 .switchIfEmpty(Mono.error(new IllegalStateException("File not found")))
-                .filter(file -> {
-                    if(file.isPrivate() && !file.getOwner().equals(f.getOwner()))
-                        return false;
-                    if(!file.isPrivate() && Objects.nonNull(file.getPassword()))
-                        return file.getPassword().equals(f.getPassword());
-                    return true;
-                }).switchIfEmpty(Mono.error(new IllegalStateException("This file is protected")))
+                .filter(file -> isAccessible(file, f.getName(), f.getPassword()))
+                .switchIfEmpty(Mono.error(new IllegalStateException("This file is protected")))
                 .flatMap(file -> Mono.fromFuture(asyncClient
                         .getObject(request, new ResponseProvider())).map(response -> {
-                    checkDownloadResult(response.sdkResponse);
+                    checkResult(response.sdkResponse,
+                            new DownloadFailedException(response.sdkResponse));
                     String fileName = getMetadataItem(response.sdkResponse, file.getId());
 
                     return ResponseEntity.ok()
-                            .header(HttpHeaders.CONTENT_TYPE, response.sdkResponse.contentType())
-                            .header(HttpHeaders.CONTENT_LENGTH, Long.toString(response.sdkResponse.contentLength()))
-                            .header(HttpHeaders.CONTENT_DISPOSITION, String.format("attachment; filename=\"%s\"", fileName))
+                            .header(HttpHeaders.CONTENT_TYPE,
+                                    response.sdkResponse.contentType())
+                            .header(HttpHeaders.CONTENT_LENGTH,
+                                    Long.toString(response.sdkResponse.contentLength()))
+                            .header(HttpHeaders.CONTENT_DISPOSITION,
+                                    String.format("attachment; filename=\"%s\"", fileName))
                             .body(response.flux);
                 }));
     }
@@ -103,6 +102,35 @@ public class FileService {
 
     }
 
+    public Mono<File> deleteFile(File f) {
+
+        DeleteObjectRequest delete = DeleteObjectRequest
+                .builder()
+                .bucket(properties.getBucket())
+                .key(f.getId())
+                .build();
+
+        return repository.findById(f.getId())
+                .switchIfEmpty(Mono.error(new IllegalStateException("File not found")))
+                .filter(file -> file.getOwner().equals(f.getOwner()))
+                .switchIfEmpty(Mono.error(new IllegalStateException("The file is protected")))
+                .flatMap(file -> Mono.fromFuture(asyncClient.deleteObject(delete))
+                        .flatMap(response -> {
+                            checkResult(response, new DeleteFailedException(response));
+                            var deleted = repository.delete(file);
+                            var monoFile = Mono.just(file);
+                            return Mono.when(deleted, monoFile).then(monoFile);
+                }));
+    }
+
+   private boolean isAccessible(File repo, String username, String password) {
+       if(repo.isPrivate() && !repo.getOwner().equals(username))
+           return false;
+       else if(!repo.isPrivate() && Objects.nonNull(repo.getPassword()))
+           return repo.getPassword().equals(password);
+       return true;
+   }
+
    private Mono<String> saveFile(HttpHeaders headers, FilePart part, File file) {
         String fileKey = file.getId();
 
@@ -129,7 +157,7 @@ public class FileService {
         return Mono
                 .fromFuture(future)
                 .flatMapMany(response -> {
-                    checkUploadResult(response);
+                    checkResult(response, new UploadFailedException(response));
                     uploadState.setUploadId(response.uploadId());
                     return part.content();
                 })
@@ -151,7 +179,7 @@ public class FileService {
                 })
                 .flatMap(this::completeUpload)
                 .map(response -> {
-                    checkUploadResult(response);
+                    checkResult(response, new UploadFailedException(response));
                     return uploadState.getFileKey();
                 });
     }
@@ -199,7 +227,8 @@ public class FileService {
 
         return Mono.fromFuture(request)
                 .map(uploadPartResult -> {
-                    checkUploadResult(uploadPartResult);
+                    checkResult(uploadPartResult,
+                            new UploadFailedException(uploadPartResult));
                     return CompletedPart.builder()
                             .eTag(uploadPartResult.eTag())
                             .partNumber(partNumber)
@@ -207,9 +236,9 @@ public class FileService {
                 });
     }
 
-    private static void checkUploadResult(SdkResponse result) {
+    private static void checkResult(SdkResponse result, RuntimeException ex) {
         if(result.sdkHttpResponse() == null || !result.sdkHttpResponse().isSuccessful()) {
-            throw new UploadFailedException(result);
+            throw ex;
         }
     }
 
@@ -220,13 +249,5 @@ public class FileService {
             }
         }
         return defaultValue;
-    }
-
-    private static void checkDownloadResult(SdkResponse response) {
-        SdkHttpResponse sdkResponse = response.sdkHttpResponse();
-        if ( sdkResponse != null && sdkResponse.isSuccessful()) {
-            return;
-        }
-        throw new DownloadFailedException(response);
     }
 }

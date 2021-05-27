@@ -2,6 +2,7 @@ package com.fileservice.files;
 
 import lombok.*;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
 
@@ -9,8 +10,8 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @NoArgsConstructor
-@SuppressWarnings("unused")
 @ToString
+@Document
 public class File {
     @Id
     private String id;
