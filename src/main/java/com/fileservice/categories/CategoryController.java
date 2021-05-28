@@ -10,7 +10,7 @@ import reactor.core.publisher.Flux;
 @CrossOrigin
 @AllArgsConstructor
 @RestController
-@RequestMapping("/api/v1/categories")
+@RequestMapping("api/v1/categories")
 public class CategoryController {
 
     private final CategoryService service;
