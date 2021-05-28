@@ -1,6 +1,5 @@
 package com.fileservice.files;
 
-import com.fileservice.categories.CategoryRepository;
 import com.fileservice.config.S3ClientConfigProperties;
 import com.fileservice.exceptions.DeleteFailedException;
 import com.fileservice.exceptions.DownloadFailedException;
@@ -82,26 +81,29 @@ public class FileService {
     public Mono<List> uploadFile(HttpHeaders headers,
                  Flux<FilePart> fileParts, UploadRequest request) {
 
-        File file = new File(UUID.randomUUID().toString(), request.getUsername(),
-                request.getFilename(), null,  headers.getContentLength(),
-                LocalDateTime.now(), true, request.getDescription(),
-                new LinkedList<>(), new LinkedList<>());
-
-        return repository.findAllByOwner(request.getUsername()).collect(Collectors.toList())
+        return fileParts.flatMap(part -> repository.findAllByOwner(request.getUsername())
+                .collect(Collectors.toList())
                 .map(List::size)
                 .filter(c -> c >= MAX_FILE && request.getRole().equals(UserRoles.STANDARD))
                 .flatMap(f -> Mono.error(new IllegalStateException("Max file number reached")))
-                .switchIfEmpty(Mono.defer(() ->
-                        repository.findByNameAndOwner(request.getFilename(), request.getUsername())
-                        .flatMap(f -> Mono.error(new IllegalStateException("File already exist")))
-                        .switchIfEmpty(Mono.defer(() -> fileParts.flatMap(part ->
-                                saveFile(headers, part, file)).collect(Collectors.toList())
-                        .flatMap(list -> {
-                            var monoList = Mono.just(list);
-                            var newFile = repository.save(file);
-                            return Mono.when(monoList, newFile).then(monoList);
-                        }))))).cast(List.class);
-
+                .switchIfEmpty(Mono.defer(() -> repository.findByNameAndOwner(part.filename(), request.getUsername())
+                        .flatMap(f -> Mono.error(new IllegalStateException("File already exists")))
+                        .switchIfEmpty(Mono.defer(() -> {
+                            File file = new File(UUID.randomUUID().toString(), request.getUsername(),
+                                    part.filename(), null,  headers.getContentLength(),
+                                    LocalDateTime.now(), true, request.getDescription(),
+                                    new LinkedList<>(), new LinkedList<>());
+                            var savedFile =  saveFile(headers, part, file);
+                            var monoFile = Mono.just(file);
+                            return Mono.when(savedFile, monoFile).then(monoFile);
+                        }))
+                )).cast(File.class))
+                .collect(Collectors.toList())
+                .flatMap(list -> {
+                    var saved = repository.saveAll(list);
+                    var monoList = Mono.just(list);
+                    return Mono.when(saved, monoList).then(monoList);
+                });
     }
 
     public Mono<File> deleteFile(File f) {

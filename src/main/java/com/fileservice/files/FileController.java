@@ -42,12 +42,12 @@ public class FileController {
 
     @PostMapping(path = "/upload")
     public Mono<Message> uploadMultiPart(@RequestHeader HttpHeaders headers,
-                                         @RequestPart("file") Flux<FilePart> file, @RequestPart("username") String username,
-                                         @RequestPart("filename") String filename, @RequestPart("role") String role,
+                                         @RequestPart("file") Flux<FilePart> file,
+                                         @RequestPart("username") String username,
+                                         @RequestPart("role") String role,
                                          @RequestPart("description") String description) {
 
-        UploadRequest request = new UploadRequest(username, filename,
-                UserRoles.valueOf(role), description);
+        UploadRequest request = new UploadRequest(username, UserRoles.valueOf(role), description);
         return service.uploadFile(headers, file, request)
                 .map(keys -> new Message().withElement("result", keys))
                 .onErrorResume(error -> Mono.just(new Message().withElement("error", error.getMessage())));

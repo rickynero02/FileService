@@ -8,7 +8,6 @@ import lombok.Data;
 @AllArgsConstructor
 public class UploadRequest {
     private String username;
-    private String filename;
     private UserRoles role;
     private String description;
 }
