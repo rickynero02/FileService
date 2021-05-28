@@ -1,5 +1,6 @@
 package com.fileservice.files;
 
+import com.fileservice.categories.CategoryRepository;
 import com.fileservice.config.S3ClientConfigProperties;
 import com.fileservice.exceptions.DeleteFailedException;
 import com.fileservice.exceptions.DownloadFailedException;
@@ -83,7 +84,8 @@ public class FileService {
 
         File file = new File(UUID.randomUUID().toString(), request.getUsername(),
                 request.getFilename(), null,  headers.getContentLength(),
-                LocalDateTime.now(), true, request.getDescription());
+                LocalDateTime.now(), true, request.getDescription(),
+                new LinkedList<>(), new LinkedList<>());
 
         return repository.findAllByOwner(request.getUsername()).collect(Collectors.toList())
                 .map(List::size)
@@ -121,6 +123,33 @@ public class FileService {
                             var monoFile = Mono.just(file);
                             return Mono.when(deleted, monoFile).then(monoFile);
                 }));
+    }
+
+    public Mono<File> updateFileInfo(File file) {
+        return repository.findById(file.getId())
+                .switchIfEmpty(Mono.error(new IllegalStateException("File does not exists")))
+                .filter(f -> f.getOwner().equals(file.getOwner()))
+                .switchIfEmpty(Mono.error(new IllegalStateException("File protected")))
+                .flatMap(__ -> repository.save(file));
+    }
+
+    public Flux<File> searchByCategory(List<String> categories) {
+        return repository.findFileByCategories(categories)
+                .filter(f -> !f.isPrivate())
+                .switchIfEmpty(Mono.error(new IllegalStateException("File not found")));
+    }
+
+    public Flux<File> getByTags(List<String> tags) {
+        return repository.findFileByTagsContaining(tags)
+                .filter(f -> !f.isPrivate())
+                .switchIfEmpty(Mono.error(new IllegalStateException("File not found")));
+
+    }
+
+    public Flux<File> findByName(String name) {
+        return repository.findAllByName(name)
+                .filter(f -> !f.isPrivate())
+                .switchIfEmpty(Mono.error(new IllegalStateException("File not found")));
     }
 
    private boolean isAccessible(File repo, String username, String password) {
