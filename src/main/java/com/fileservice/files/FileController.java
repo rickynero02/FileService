@@ -69,10 +69,10 @@ public class FileController {
 
     }
 
-    @PostMapping(path = "/download")
-    public Mono<ResponseEntity<Flux<ByteBuffer>>> downloadFile(@RequestBody File f, WebSession session) {
+    @GetMapping(path = "/download")
+    public Mono<ResponseEntity<Flux<ByteBuffer>>> downloadFile(@RequestParam("id") String id, @RequestParam("password") String password, WebSession session) {
         if(session.isStarted() && !session.isExpired()) {
-            return service.downloadFile(f, session.getAttribute("username"));
+            return service.downloadFile(id, password, session.getAttribute("username"));
         }
         return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
     }

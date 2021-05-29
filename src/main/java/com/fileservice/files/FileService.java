@@ -50,16 +50,16 @@ public class FileService {
                 .switchIfEmpty(Mono.error(new IllegalStateException("Incorrect password")));
     }
 
-    public Mono<ResponseEntity<Flux<ByteBuffer>>> downloadFile(File f, String username) {
+    public Mono<ResponseEntity<Flux<ByteBuffer>>> downloadFile(String id, String password, String username) {
 
         GetObjectRequest request = GetObjectRequest.builder()
                 .bucket(properties.getBucket())
-                .key(f.getId())
+                .key(id)
                 .build();
 
-        return repository.findById(f.getId())
+        return repository.findById(id)
                 .switchIfEmpty(Mono.error(new IllegalStateException("File not found")))
-                .filter(file -> isAccessible(file, username, f.getPassword()))
+                .filter(file -> isAccessible(file, username, password))
                 .switchIfEmpty(Mono.error(new IllegalStateException("This file is protected")))
                 .flatMap(file -> Mono.fromFuture(asyncClient
                         .getObject(request, new ResponseProvider())).map(response -> {
