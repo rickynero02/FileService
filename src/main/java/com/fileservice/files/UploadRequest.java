@@ -9,5 +9,4 @@ import lombok.Data;
 public class UploadRequest {
     private String username;
     private UserRoles role;
-    private String description;
 }

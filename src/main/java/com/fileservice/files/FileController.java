@@ -4,9 +4,11 @@ import com.fileservice.utility.Message;
 import com.fileservice.utility.UserRoles;
 import lombok.AllArgsConstructor;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.WebSession;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -23,54 +25,69 @@ public class FileController {
     private final FileService service;
 
     @GetMapping(path = "/getAll")
-    public Mono<Message> getAllFiles(@RequestParam("username") String username) {
-        return service.fetchAllFiles(username)
-                .collect(Collectors.toList())
-                .map(fileList -> new Message().withElement("result", fileList))
-                .onErrorResume(ex -> Mono.just(new Message().withElement("error", ex.getMessage())));
+    public Mono<Message> getAllFiles(WebSession session) {
+        if(session.isStarted() && !session.isExpired()) {
+            return service.fetchAllFiles(session.getAttribute("username"))
+                    .collect(Collectors.toList())
+                    .map(fileList -> new Message().withElement("result", fileList))
+                    .onErrorResume(ex -> Mono.just(new Message().withElement("error", ex.getMessage())));
+        }
+        return Mono.just(new Message().withElement("error", "Session expired"));
     }
 
-    @PostMapping(path = "/info/{username}/{filename}")
-    public Mono<Message> getFileInfo(@PathVariable("username") String username,
-                                     @PathVariable("filename") String filename, @RequestBody String passwd) {
-        return service.fetchByNameAndOwner(username, filename, passwd)
-                .map(file -> new Message().withElement("file", file))
-                .onErrorResume(error ->
-                        Mono.just(new Message().withElement("error", error.getMessage())));
+    @PostMapping(path = "/info")
+    public Mono<Message> getFileInfo(@RequestBody File file, WebSession session) {
+        if(session.isStarted() && !session.isExpired()){
+            return service.fetchByNameAndOwner(session.getAttribute("username"), file)
+                    .map(f -> new Message().withElement("file", f))
+                    .onErrorResume(error ->
+                            Mono.just(new Message().withElement("error", error.getMessage())));
+        }
+        return Mono.just(new Message().withElement("error", "Session expired"));
     }
 
 
     @PostMapping(path = "/upload")
     public Mono<Message> uploadMultiPart(@RequestHeader HttpHeaders headers,
                                          @RequestPart("file") Flux<FilePart> file,
-                                         @RequestPart("username") String username,
-                                         @RequestPart("role") String role,
-                                         @RequestPart("description") String description) {
+                                         WebSession session) {
+        if(!session.isExpired() && session.isStarted()) {
+            UploadRequest request = new UploadRequest(session.getAttribute("username"),
+                    UserRoles.valueOf(session.getAttribute("role")));
+            return service.uploadFile(headers, file, request)
+                    .map(keys -> new Message().withElement("result", keys))
+                    .onErrorResume(error -> Mono.just(new Message().withElement("error", error.getMessage())));
+        }
+        return Mono.just(new Message().withElement("error", "Session expired"));
 
-        UploadRequest request = new UploadRequest(username, UserRoles.valueOf(role), description);
-        return service.uploadFile(headers, file, request)
-                .map(keys -> new Message().withElement("result", keys))
-                .onErrorResume(error -> Mono.just(new Message().withElement("error", error.getMessage())));
     }
 
     @PostMapping(path = "/download")
-    public Mono<ResponseEntity<Flux<ByteBuffer>>> downloadFile(@RequestBody File f) {
-        return service.downloadFile(f);
+    public Mono<ResponseEntity<Flux<ByteBuffer>>> downloadFile(@RequestBody File f, WebSession session) {
+        if(session.isStarted() && !session.isExpired()) {
+            return service.downloadFile(f, session.getAttribute("username"));
+        }
+        return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
     }
 
-    @DeleteMapping(path = "/delete")
-    public Mono<Message> deleteFile(@RequestBody File f) {
-        return service.deleteFile(f)
-                .map(file -> new Message().withElement("result", file))
-                .onErrorResume(err -> Mono.just(new Message().withElement("error", err.getMessage())));
+    @DeleteMapping(path = "/delete/{id}")
+    public Mono<Message> deleteFile(@PathVariable("id") String id, WebSession session) {
+        if(!session.isExpired() && session.isStarted()) {
+            return service.deleteFile(id, session.getAttribute("username"))
+                    .map(file -> new Message().withElement("result", file))
+                    .onErrorResume(err -> Mono.just(new Message().withElement("error", err.getMessage())));
+        }
+        return Mono.just(new Message().withElement("error", "Session expired"));
     }
 
     @PutMapping(path = "/updateInfo")
-    public Mono<Message> updateFileInfo(@RequestBody File file) {
-        return service.updateFileInfo(file)
-                .map(f -> new Message().withElement("result", f))
-                .onErrorResume(err -> Mono.just(new Message().withElement("error", err.getMessage())));
-
+    public Mono<Message> updateFileInfo(@RequestBody File file, WebSession session) {
+        if(session.isStarted() && !session.isExpired()) {
+            return service.updateFileInfo(file, session.getAttribute("username"))
+                    .map(f -> new Message().withElement("result", f))
+                    .onErrorResume(err -> Mono.just(new Message().withElement("error", err.getMessage())));
+        }
+        return Mono.just(new Message().withElement("error", "Session expired"));
     }
 
     @PostMapping("/categories")

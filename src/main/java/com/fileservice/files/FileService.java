@@ -39,18 +39,18 @@ public class FileService {
         return repository.findAllByOwner(owner);
     }
 
-    public Mono<File> fetchByNameAndOwner(String username, String name, String passwd) {
-        return repository.findByNameAndOwner(name, username)
+    public Mono<File> fetchByNameAndOwner(String username, File f) {
+        return repository.findByNameAndOwner(f.getName(), username)
                 .switchIfEmpty(Mono.error(new IllegalStateException("File not found")))
                 .filter(file -> {
                     if(file.getPassword() == null)
                         return true;
-                    return file.getPassword().equals(passwd);
+                    return file.getPassword().equals(f.getPassword());
                 })
                 .switchIfEmpty(Mono.error(new IllegalStateException("Incorrect password")));
     }
 
-    public Mono<ResponseEntity<Flux<ByteBuffer>>> downloadFile(File f) {
+    public Mono<ResponseEntity<Flux<ByteBuffer>>> downloadFile(File f, String username) {
 
         GetObjectRequest request = GetObjectRequest.builder()
                 .bucket(properties.getBucket())
@@ -59,7 +59,7 @@ public class FileService {
 
         return repository.findById(f.getId())
                 .switchIfEmpty(Mono.error(new IllegalStateException("File not found")))
-                .filter(file -> isAccessible(file, f.getName(), f.getPassword()))
+                .filter(file -> isAccessible(file, username, f.getPassword()))
                 .switchIfEmpty(Mono.error(new IllegalStateException("This file is protected")))
                 .flatMap(file -> Mono.fromFuture(asyncClient
                         .getObject(request, new ResponseProvider())).map(response -> {
@@ -91,7 +91,7 @@ public class FileService {
                         .switchIfEmpty(Mono.defer(() -> {
                             File file = new File(UUID.randomUUID().toString(), request.getUsername(),
                                     part.filename(), null,  headers.getContentLength(),
-                                    LocalDateTime.now(), true, request.getDescription(),
+                                    LocalDateTime.now(), true, null,
                                     new LinkedList<>(), new LinkedList<>());
                             var savedFile =  saveFile(headers, part, file);
                             var monoFile = Mono.just(file);
@@ -106,17 +106,17 @@ public class FileService {
                 });
     }
 
-    public Mono<File> deleteFile(File f) {
+    public Mono<File> deleteFile(String id, String username) {
 
         DeleteObjectRequest delete = DeleteObjectRequest
                 .builder()
                 .bucket(properties.getBucket())
-                .key(f.getId())
+                .key(id)
                 .build();
 
-        return repository.findById(f.getId())
+        return repository.findById(id)
                 .switchIfEmpty(Mono.error(new IllegalStateException("File not found")))
-                .filter(file -> file.getOwner().equals(f.getOwner()))
+                .filter(file -> file.getOwner().equals(username))
                 .switchIfEmpty(Mono.error(new IllegalStateException("The file is protected")))
                 .flatMap(file -> Mono.fromFuture(asyncClient.deleteObject(delete))
                         .flatMap(response -> {
@@ -127,10 +127,10 @@ public class FileService {
                 }));
     }
 
-    public Mono<File> updateFileInfo(File file) {
+    public Mono<File> updateFileInfo(File file, String username) {
         return repository.findById(file.getId())
                 .switchIfEmpty(Mono.error(new IllegalStateException("File does not exists")))
-                .filter(f -> f.getOwner().equals(file.getOwner()))
+                .filter(f -> f.getOwner().equals(username))
                 .switchIfEmpty(Mono.error(new IllegalStateException("File protected")))
                 .flatMap(__ -> repository.save(file));
     }
