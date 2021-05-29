@@ -8,12 +8,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebSession;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @RestController
@@ -50,15 +52,22 @@ public class FileController {
     @PostMapping(path = "/upload")
     public Mono<Message> uploadMultiPart(@RequestHeader HttpHeaders headers,
                                          @RequestPart("file") Flux<FilePart> file,
-                                         WebSession session) {
-        if(!session.isExpired() && session.isStarted()) {
-            UploadRequest request = new UploadRequest(session.getAttribute("username"),
-                    UserRoles.valueOf(session.getAttribute("role")));
-            return service.uploadFile(headers, file, request)
-                    .map(keys -> new Message().withElement("result", keys))
-                    .onErrorResume(error -> Mono.just(new Message().withElement("error", error.getMessage())));
-        }
-        return Mono.just(new Message().withElement("error", "Session expired"));
+                                         ServerWebExchange webExchange) {
+
+        return webExchange.getSession()
+            .flatMap(session -> {
+                String sessionId = Objects.requireNonNull(webExchange.getRequest()
+                        .getCookies().getFirst("SESSION")).getValue();
+                System.out.println(sessionId);
+                if(!session.isExpired() && session.isStarted()){
+                    UploadRequest request = new UploadRequest(session.getAttribute("username"),
+                            UserRoles.valueOf(session.getAttribute("role")));
+                    return service.uploadFile(headers, file, request)
+                            .map(keys -> new Message().withElement("result", keys))
+                            .onErrorResume(error -> Mono.just(new Message().withElement("error", error.getMessage())));
+                }
+                return Mono.just(new Message().withElement("error", "Session expired"));
+            });
 
     }
 
