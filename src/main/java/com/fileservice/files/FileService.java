@@ -33,7 +33,7 @@ public class FileService {
     private final S3AsyncClient asyncClient;
     private final S3ClientConfigProperties properties;
 
-    private static final int MAX_FILE = 10;
+    private static final int MAX_FILE = 50;
 
     public Flux<File> fetchAllFiles(String owner) {
         return repository.findAllByOwner(owner);

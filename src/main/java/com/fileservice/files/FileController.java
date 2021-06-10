@@ -118,6 +118,6 @@ public class FileController {
         return service.findByName(name)
                 .collect(Collectors.toList())
                 .map(f -> new Message().withElement("result", f))
-                .onErrorResume(err -> Mono.just(new Message().withElement("error", err)));
+                .onErrorResume(err -> Mono.just(new Message().withElement("error", err.getMessage())));
     }
 }
