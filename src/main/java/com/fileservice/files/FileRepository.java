@@ -11,7 +11,7 @@ import java.util.List;
 public interface FileRepository extends ReactiveCrudRepository<File, String> {
     Flux<File> findAllByOwner(String owner);
     Mono<File> findByNameAndOwner(String name, String owner);
-    Flux<File> findFileByCategories(List<String> categories);
+    Flux<File> findFileByCategoriesContaining(List<String> categories);
     Flux<File> findFileByTagsContaining(List<String> tags);
     Flux<File> findAllByName(String name);
 }

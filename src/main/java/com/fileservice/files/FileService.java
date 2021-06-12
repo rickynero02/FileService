@@ -136,7 +136,7 @@ public class FileService {
     }
 
     public Flux<File> searchByCategory(List<String> categories) {
-        return repository.findFileByCategories(categories)
+        return repository.findFileByCategoriesContaining(categories)
                 .filter(f -> !f.isPrivate())
                 .switchIfEmpty(Mono.error(new IllegalStateException("File not found")));
     }
